@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const translations = {
     tr: {
-      docTitle: "SaveStream | Premium Video & Audio Downloader",
+      docTitle: "VeloGrab | Premium Video & Audio Downloader",
       headerTagline: "Premium Medya Portalı",
       welcomeTitle: 'Sosyal Medya <span class="gradient-text">İndirici</span>',
       welcomeSubtitle: "YouTube, Instagram ve TikTok bağlantılarını girin. Videoları anında en yüksek kalitede cihazınıza kaydedin.",
@@ -86,10 +86,10 @@ document.addEventListener('DOMContentLoaded', () => {
       privacyModalTitle: 'Gizlilik Politikası',
       linkAbout: 'Hakkımızda',
       linkPrivacy: 'Gizlilik Politikası',
-      footerText: '© 2026 SaveStream. Tüm hakları saklıdır. Bu site eğitim ve kişisel kullanım için tasarlanmıştır.'
+      footerText: '© 2026 VeloGrab. Tüm hakları saklıdır. Bu site eğitim ve kişisel kullanım için tasarlanmıştır.'
     },
     en: {
-      docTitle: "SaveStream | Premium Video & Audio Downloader",
+      docTitle: "VeloGrab | Premium Video & Audio Downloader",
       headerTagline: "Premium Media Portal",
       welcomeTitle: 'Social Media <span class="gradient-text">Downloader</span>',
       welcomeSubtitle: "Enter YouTube, Instagram, or TikTok links. Instantly save videos to your device in highest quality.",
@@ -129,11 +129,11 @@ document.addEventListener('DOMContentLoaded', () => {
       btnMergingAction: 'Merging...',
       btnCompletedAction: 'Completed!',
       btnFailedAction: 'Error Occurred!',
-      aboutModalTitle: 'About SaveStream',
+      aboutModalTitle: 'About VeloGrab',
       privacyModalTitle: 'Privacy Policy',
       linkAbout: 'About Us',
       linkPrivacy: 'Privacy Policy',
-      footerText: '© 2026 SaveStream. All rights reserved. Designed for educational and personal use.'
+      footerText: '© 2026 VeloGrab. All rights reserved. Designed for educational and personal use.'
     }
   };
 
