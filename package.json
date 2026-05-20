@@ -4,9 +4,10 @@
   "description": "Premium multi-platform video downloader for YouTube, Instagram, and TikTok",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node download_ytdlp.js && node server.js",
     "dev": "node server.js",
-    "postinstall": "node download_ytdlp.js"
+    "postinstall": "node download_ytdlp.js",
+    "build": "node download_ytdlp.js"
   },
   "dependencies": {
     "@tobyg74/tiktok-api-dl": "^1.3.7",
