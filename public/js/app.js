@@ -462,11 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     if (data.thumbnail) {
-      if (data.platform === 'instagram' || data.platform === 'tiktok') {
-        videoThumb.src = `/api/proxy-image?url=${encodeURIComponent(data.thumbnail)}`;
-      } else {
-        videoThumb.src = data.thumbnail;
-      }
+      videoThumb.src = `/api/proxy-image?url=${encodeURIComponent(data.thumbnail)}`;
       videoThumb.onerror = () => {
         setFallbackThumbnail(data.platform);
       };
@@ -576,7 +572,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 url: urlInput.value.trim(),
                 quality: dl.qualityKey || 'best',
                 platform: data.platform,
-                filename: filename
+                filename: filename,
+                directUrl: dl.url || null
               })
             });
             

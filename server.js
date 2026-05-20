@@ -117,6 +117,154 @@ function isUrlSafe(inputUrl) {
   }
 }
 
+// Helper to extract YouTube video ID
+function getYoutubeId(url) {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
+// Helper to query Invidious API for YouTube video details (bypass bot checks)
+async function getYoutubeDurationFromPiped(videoId) {
+  const instances = [
+    'https://api.piped.private.coffee',
+    'https://pipedapi.lunar.icu',
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.leptons.xyz'
+  ];
+  for (const instance of instances) {
+    try {
+      const response = await axios.get(`${instance}/streams/${videoId}`, { timeout: 1200 });
+      if (response.data && response.data.duration !== undefined) {
+        return formatDuration(response.data.duration);
+      }
+    } catch (err) {
+      // silently try next instance
+    }
+  }
+  return null;
+}
+
+// Helper to extract Instagram shortcode
+function getInstagramShortcode(url) {
+  const match = url.match(/(?:instagr\.am|instagram\.com)\/(?:p|reel|tv)\/([^/?#&]+)/i);
+  return match ? match[1] : null;
+}
+
+// Scrape Instagram public embed page to get username, thumbnail, caption (no login needed)
+async function getInstagramMetadata(url) {
+  try {
+    const shortcode = getInstagramShortcode(url);
+    if (!shortcode) throw new Error('Invalid Instagram URL shortcode.');
+    
+    const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
+    const response = await axios.get(embedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      timeout: 4000
+    });
+    
+    const html = response.data;
+    
+    // Parse Username
+    let username = 'Instagram User';
+    const usernameMatch = html.match(/class="EmbedHeaderUsername[^>]*>([^<]+)/i) || 
+                          html.match(/"username"\s*:\s*"([^"]+)"/i);
+    if (usernameMatch) {
+      username = usernameMatch[1].trim();
+    }
+    
+    // Parse Thumbnail
+    let thumbnail = '';
+    const thumbnailMatch = html.match(/"display_url"\s*:\s*"([^"]+)"/i) || 
+                           html.match(/"thumbnail_src"\s*:\s*"([^"]+)"/i) ||
+                           html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/i);
+    if (thumbnailMatch) {
+      thumbnail = thumbnailMatch[1].replace(/\\/g, '').trim();
+    }
+    
+    // Parse Title/Caption
+    let title = 'Instagram Post';
+    const captionMatch = html.match(/class="EmbedCaptionText[^>]*>([\s\S]*?)<\/div>/i) ||
+                         html.match(/"caption"\s*:\s*"([^"]+)"/i);
+    if (captionMatch) {
+      title = captionMatch[1].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+      if (title.length > 100) {
+        title = title.substring(0, 97) + '...';
+      }
+    }
+    
+    return {
+      title,
+      author: username,
+      thumbnail,
+      duration: 'N/A'
+    };
+  } catch (err) {
+    console.log('Instagram embed fetch failed:', err.message);
+  }
+  
+  return {
+    title: 'Instagram Post',
+    author: 'Instagram User',
+    thumbnail: '',
+    duration: 'N/A'
+  };
+}
+
+// Scrape TikTok public oEmbed endpoint
+async function getTiktokMetadata(url) {
+  try {
+    const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
+    const response = await axios.get(oembedUrl, { timeout: 3500 });
+    if (response.data) {
+      return {
+        title: response.data.title || 'TikTok Video',
+        author: response.data.author_name || response.data.author_unique_id || 'TikTok Creator',
+        thumbnail: response.data.thumbnail_url || '',
+        duration: 'N/A'
+      };
+    }
+  } catch (err) {
+    console.log('TikTok oEmbed fetch failed:', err.message);
+  }
+  return {
+    title: 'TikTok Video',
+    author: 'TikTok Creator',
+    thumbnail: '',
+    duration: 'N/A'
+  };
+}
+
+// Helper to fetch YouTube page and extract duration using regex
+async function getYoutubeDuration(url) {
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      timeout: 3000
+    });
+    const html = response.data;
+    
+    const approxDurationMsMatch = html.match(/"approxDurationMs"\s*:\s*"(\d+)"/);
+    if (approxDurationMsMatch) {
+      const ms = parseInt(approxDurationMsMatch[1]);
+      return formatDuration(ms / 1000);
+    }
+    
+    const lengthSecondsMatch = html.match(/"lengthSeconds"\s*:\s*"(\d+)"/);
+    if (lengthSecondsMatch) {
+      const secs = parseInt(lengthSecondsMatch[1]);
+      return formatDuration(secs);
+    }
+  } catch (err) {
+    // silently fail
+  }
+  return 'N/A';
+}
+
 // Helper to run local yt-dlp binary (SORUN 1: Global ytDlpPath değişkeni kullanılıyor)
 function runYtDlp(url) {
   return new Promise((resolve, reject) => {
@@ -352,21 +500,29 @@ app.post('/api/download', rateLimiter, async (req, res) => {
 
     try {
       console.log('Attempting TikTok download with Cobalt API fallback...');
+      const meta = await getTiktokMetadata(url);
       const cobaltData = await fetchFromCobalt(url, 'max');
       const size = await getRemoteFileSize(cobaltData.url);
       return res.json({
-        title: cobaltData.title,
-        thumbnail: '',
-        duration: 'N/A',
+        title: meta.title || cobaltData.title,
+        thumbnail: meta.thumbnail || '',
+        duration: meta.duration || 'N/A',
         platform: 'tiktok',
-        author: 'TikTok Creator',
+        author: meta.author || 'TikTok Creator',
         downloads: [
           {
-            quality: 'HD Video (Cobalt)',
+            quality: 'HD Video (No Watermark)',
             url: cobaltData.url,
             ext: 'mp4',
             type: 'video',
             size: size
+          },
+          {
+            quality: 'Audio Only',
+            qualityKey: 'audio',
+            ext: 'mp3',
+            type: 'audio',
+            size: 'N/A'
           }
         ]
       });
@@ -407,21 +563,29 @@ app.post('/api/download', rateLimiter, async (req, res) => {
 
     try {
       console.log('Attempting Instagram download with Cobalt API...');
+      const meta = await getInstagramMetadata(url);
       const cobaltData = await fetchFromCobalt(url, 'max');
       const size = await getRemoteFileSize(cobaltData.url);
       return res.json({
-        title: cobaltData.title,
-        thumbnail: '',
-        duration: 'N/A',
+        title: meta.title || cobaltData.title,
+        thumbnail: meta.thumbnail || '',
+        duration: meta.duration || 'N/A',
         platform: 'instagram',
-        author: 'Instagram User',
+        author: meta.author || 'Instagram User',
         downloads: [
           {
-            quality: 'HD Video (Cobalt)',
+            quality: 'HD Video',
             url: cobaltData.url,
             ext: 'mp4',
             type: 'video',
             size: size
+          },
+          {
+            quality: 'Audio Only',
+            qualityKey: 'audio',
+            ext: 'mp3',
+            type: 'audio',
+            size: 'N/A'
           }
         ]
       });
@@ -529,21 +693,76 @@ app.post('/api/download', rateLimiter, async (req, res) => {
     // Cobalt API Fallback
     try {
       console.log('Attempting YouTube download with Cobalt API fallback...');
-      const cobaltData = await fetchFromCobalt(url, '720');
-      const size = await getRemoteFileSize(cobaltData.url);
+      
+      const videoId = getYoutubeId(url);
+      let title = 'YouTube Video';
+      let thumbnail = videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : '';
+      let author = 'YouTube Channel';
+      let duration = 'N/A';
+
+      // 1. Try native YouTube oEmbed first (extremely reliable and fast)
+      try {
+        const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+        const oembedRes = await axios.get(oembedUrl, { timeout: 2000 });
+        if (oembedRes.data) {
+          title = oembedRes.data.title || title;
+          author = oembedRes.data.author_name || author;
+          thumbnail = oembedRes.data.thumbnail_url || thumbnail;
+        }
+      } catch (oembedErr) {
+        console.log('YouTube oEmbed fetch failed, trying noembed:', oembedErr.message);
+        // Fallback to noembed
+        try {
+          const noembedRes = await axios.get(`https://noembed.com/embed?url=${encodeURIComponent(url)}`, { timeout: 2000 });
+          if (noembedRes.data) {
+            title = noembedRes.data.title || title;
+            author = noembedRes.data.author_name || author;
+            thumbnail = noembedRes.data.thumbnail_url || thumbnail;
+          }
+        } catch (noembedErr) {
+          console.log('noembed also failed:', noembedErr.message);
+        }
+      }
+
+      // 2. Fetch duration from Piped API
+      if (videoId) {
+        try {
+          const pipedDuration = await getYoutubeDurationFromPiped(videoId);
+          if (pipedDuration) {
+            duration = pipedDuration;
+          }
+        } catch (pipedErr) {
+          console.log('Piped duration fetch failed:', pipedErr.message);
+        }
+      }
+
       return res.json({
-        title: cobaltData.title,
-        thumbnail: '',
-        duration: 'N/A',
+        title: title,
+        thumbnail: thumbnail,
+        duration: duration,
         platform: 'youtube',
-        author: 'YouTube Creator',
+        author: author,
         downloads: [
+          {
+            quality: 'Video (Full HD 1080p)',
+            qualityKey: '1080',
+            ext: 'mp4',
+            type: 'video',
+            size: 'N/A'
+          },
           {
             quality: 'Video (HD 720p)',
             qualityKey: '720',
             ext: 'mp4',
             type: 'video',
-            size: size
+            size: 'N/A'
+          },
+          {
+            quality: 'Video (SD 480p)',
+            qualityKey: '480',
+            ext: 'mp4',
+            type: 'video',
+            size: 'N/A'
           },
           {
             quality: 'Video (SD 360p)',
@@ -619,7 +838,7 @@ setInterval(() => {
 }, 5 * 60 * 1000); // Check every 5 minutes
 
 app.post('/api/download-start', rateLimiter, (req, res) => {
-  const { url, quality, platform, filename } = req.body;
+  const { url, quality, platform, filename, directUrl } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'URL parametresi gereklidir.' });
   }
@@ -641,6 +860,44 @@ app.post('/api/download-start', rateLimiter, (req, res) => {
     isAudio: isAudio,
     childProcess: null
   };
+
+  async function tryCobaltFallback(session, tempFilePath) {
+    console.log(`Attempting Cobalt download fallback for session ${downloadId} (URL: ${url}, Quality: ${quality})...`);
+    session.status = 'downloading';
+    session.progress = 50;
+    try {
+      if (tempFilePath && fs.existsSync(tempFilePath)) {
+        try { fs.unlinkSync(tempFilePath); } catch (e) {}
+      }
+      
+      let targetQuality = '720';
+      if (quality === 'audio') {
+        targetQuality = 'audio';
+      } else if (quality && quality !== 'best') {
+        targetQuality = quality;
+      } else {
+        targetQuality = 'max';
+      }
+
+      const cobaltData = await fetchFromCobalt(url, targetQuality);
+      console.log(`Cobalt fallback successful for session ${downloadId}: ${cobaltData.url}`);
+      session.cobaltUrl = cobaltData.url;
+      session.status = 'completed';
+      session.progress = 100;
+    } catch (err) {
+      console.error(`Cobalt download fallback also failed for session ${downloadId}:`, err.message);
+      session.status = 'failed';
+      session.error = 'Video indirme ve birleştirme işlemi başarısız oldu (Alternatif sunucular dahil).';
+    }
+  }
+
+  if (directUrl) {
+    console.log(`Bypassing yt-dlp. Direct URL provided for session ${downloadId}: ${directUrl}`);
+    downloadSessions[downloadId].cobaltUrl = directUrl;
+    downloadSessions[downloadId].status = 'completed';
+    downloadSessions[downloadId].progress = 100;
+    return res.json({ downloadId });
+  }
 
   // SORUN 3 DÜZELTME: 30 dakika sonra session'ı bellekten ve diskten temizleyen zamanlayıcı
   setTimeout(() => {
@@ -732,24 +989,16 @@ app.post('/api/download-start', rateLimiter, (req, res) => {
       session.status = 'completed';
       session.progress = 100;
     } else {
-      console.error(`Background download session ${downloadId} failed. Exit code: ${code}`);
-      session.status = 'failed';
-      session.error = 'Video birleştirme veya indirme hatası oluştu.';
-      if (fs.existsSync(tempFilePath)) {
-        try { fs.unlinkSync(tempFilePath); } catch (e) {}
-      }
+      console.error(`Background download session ${downloadId} failed. Exit code: ${code}. Trying Cobalt fallback...`);
+      tryCobaltFallback(session, tempFilePath);
     }
   });
 
   child.on('error', (err) => {
-    console.error(`Failed to spawn download process for session ${downloadId}:`, err);
+    console.error(`Failed to spawn download process for session ${downloadId}:`, err.message, `. Trying Cobalt fallback...`);
     const session = downloadSessions[downloadId];
     if (session) {
-      session.status = 'failed';
-      session.error = err.message;
-      if (fs.existsSync(tempFilePath)) {
-        try { fs.unlinkSync(tempFilePath); } catch (e) {}
-      }
+      tryCobaltFallback(session, tempFilePath);
     }
   });
 
@@ -773,36 +1022,76 @@ app.get('/api/download-progress', (req, res) => {
 });
 
 // 4. API: Retrieve the fully merged video file
-app.get('/api/download-retrieve', (req, res) => {
+app.get('/api/download-retrieve', async (req, res) => {
   const { id } = req.query;
   const session = downloadSessions[id];
 
-  if (!session || session.status !== 'completed' || !fs.existsSync(session.tempFilePath)) {
-    return res.status(404).send('Dosya henüz hazır değil, bulunamadı veya süresi dolmuş.');
+  if (!session || session.status !== 'completed') {
+    return res.status(404).send('Dosya henüz hazır değil veya süresi dolmuş.');
   }
 
-  const tempFilePath = session.tempFilePath;
   const filename = session.filename;
   const safeFilename = encodeURIComponent(filename);
 
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFilename}`);
   res.setHeader('Content-Type', session.isAudio ? 'audio/mpeg' : 'video/mp4');
 
-  const stats = fs.statSync(tempFilePath);
-  res.setHeader('Content-Length', stats.size);
+  if (session.cobaltUrl) {
+    console.log(`Piping remote Cobalt file download for session ${id} from: ${session.cobaltUrl}`);
+    try {
+      const response = await axios({
+        method: 'get',
+        url: session.cobaltUrl,
+        responseType: 'stream',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        timeout: 20000 // 20s timeout for stream start
+      });
 
-  res.sendFile(tempFilePath, (err) => {
-    if (err) {
-      console.error(`Error sending session file ${id}:`, err.message);
+      if (response.headers['content-length']) {
+        res.setHeader('Content-Length', response.headers['content-length']);
+      }
+
+      response.data.pipe(res);
+
+      response.data.on('end', () => {
+        console.log(`Piping remote Cobalt file download completed for session ${id}.`);
+        delete downloadSessions[id];
+      });
+
+      response.data.on('error', (err) => {
+        console.error(`Error piping remote Cobalt stream for session ${id}:`, err.message);
+        delete downloadSessions[id];
+      });
+    } catch (err) {
+      console.error(`Failed to stream remote Cobalt file for session ${id}:`, err.message);
+      if (!res.headersSent) {
+        res.status(500).send(`Dosya akışı indirilemedi: ${err.message}`);
+      }
+      delete downloadSessions[id];
     }
-    // Delete the file after it finishes downloading to save disk space
-    fs.unlink(tempFilePath, (unlinkErr) => {
-      if (unlinkErr) console.error('Error deleting temp file after retrieval:', unlinkErr);
-      else console.log(`Successfully cleaned up session file ${id}.`);
+  } else {
+    if (!fs.existsSync(session.tempFilePath)) {
+      return res.status(404).send('Dosya bulunamadı.');
+    }
+    const tempFilePath = session.tempFilePath;
+    const stats = fs.statSync(tempFilePath);
+    res.setHeader('Content-Length', stats.size);
+
+    res.sendFile(tempFilePath, (err) => {
+      if (err) {
+        console.error(`Error sending session file ${id}:`, err.message);
+      }
+      // Delete the file after it finishes downloading to save disk space
+      fs.unlink(tempFilePath, (unlinkErr) => {
+        if (unlinkErr) console.error('Error deleting temp file after retrieval:', unlinkErr);
+        else console.log(`Successfully cleaned up session file ${id}.`);
+      });
+      // Remove the session from memory
+      delete downloadSessions[id];
     });
-    // Remove the session from memory
-    delete downloadSessions[id];
-  });
+  }
 });
 
 // 5. API: Direct media streaming proxy for TikTok and Instagram
