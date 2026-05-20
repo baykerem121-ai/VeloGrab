@@ -137,6 +137,9 @@ function runYtDlp(url) {
 // Fallback to Cobalt API instances
 async function fetchFromCobalt(url, quality = '720') {
   const cobaltInstances = [
+    'https://nuko-c.meowing.de/',
+    'https://lime.clxxped.lol/',
+    'https://dog.kittycat.boo/',
     'https://cobaltapi.kittycat.boo/',
     'https://cobaltapi.squair.xyz/',
     'https://fox.kittycat.boo/',
@@ -152,7 +155,8 @@ async function fetchFromCobalt(url, quality = '720') {
       if (quality === 'audio') {
         postData.downloadMode = 'audio';
       } else {
-        postData.videoQuality = quality;
+        postData.vQuality = quality;
+        postData.videoQuality = quality; // Backwards compatibility for older instances
       }
 
       const response = await axios.post(host, postData, {
@@ -172,7 +176,8 @@ async function fetchFromCobalt(url, quality = '720') {
         };
       }
     } catch (err) {
-      console.log(`Cobalt host ${host} failed:`, err.message);
+      const errMsg = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+      console.log(`Cobalt host ${host} failed:`, errMsg);
     }
   }
   throw new Error('All fallback API servers failed to process this link.');
