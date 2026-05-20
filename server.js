@@ -137,8 +137,6 @@ function runYtDlp(url) {
 // Fallback to Cobalt API instances
 async function fetchFromCobalt(url, quality = '720') {
   const cobaltInstances = [
-    'https://nuko-c.meowing.de/',
-    'https://lime.clxxped.lol/',
     'https://dog.kittycat.boo/',
     'https://cobaltapi.kittycat.boo/',
     'https://cobaltapi.squair.xyz/',
@@ -150,13 +148,12 @@ async function fetchFromCobalt(url, quality = '720') {
     try {
       const postData = {
         url: url,
-        filenamePattern: 'basic'
+        filenameStyle: 'basic'
       };
       if (quality === 'audio') {
         postData.downloadMode = 'audio';
       } else {
-        postData.vQuality = quality;
-        postData.videoQuality = quality; // Backwards compatibility for older instances
+        postData.videoQuality = quality;
       }
 
       const response = await axios.post(host, postData, {
