@@ -69,16 +69,30 @@ if (process.env.ALLOWED_DOMAINS) {
   process.env.ALLOWED_DOMAINS.split(',').forEach(d => allowedOrigins.push(d.trim()));
 }
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || process.env.NODE_ENV !== 'production') return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+app.use(cors((req, callback) => {
+  const origin = req.header('Origin');
+  let corsOptions = { origin: false };
+
+  if (!origin || process.env.NODE_ENV !== 'production') {
+    corsOptions = { origin: true };
+  } else {
+    const host = req.header('Host');
+    const forwardedHost = req.header('x-forwarded-host');
+    let isSameOrigin = false;
+    try {
+      const originUrl = new URL(origin);
+      if (originUrl.host === host || (forwardedHost && originUrl.host === forwardedHost)) {
+        isSameOrigin = true;
+      }
+    } catch (e) {}
+
+    if (isSameOrigin || allowedOrigins.indexOf(origin) !== -1) {
+      corsOptions = { origin: true };
     }
-    return callback(null, true);
   }
+  callback(null, corsOptions);
 }));
+
 
 app.use(express.json());
 

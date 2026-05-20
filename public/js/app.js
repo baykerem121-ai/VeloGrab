@@ -409,7 +409,14 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ url })
       });
 
-      const data = await response.json();
+      let data;
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(text || `HTTP error ${response.status}`);
+      }
       
       hideElement(loadingState);
       btnDownload.disabled = false;
@@ -427,7 +434,12 @@ document.addEventListener('DOMContentLoaded', () => {
       hideElement(loadingState);
       btnDownload.disabled = false;
       btnDownload.innerHTML = translations[currentLang].btnDownloadQuery;
-      showError(translations[currentLang].errorTitleConnection, translations[currentLang].errorTextConnection);
+      
+      let errorMsg = translations[currentLang].errorTextConnection;
+      if (err.message && !err.message.includes('JSON') && !err.message.includes('fetch')) {
+        errorMsg = err.message;
+      }
+      showError(translations[currentLang].errorTitleConnection, errorMsg);
     }
   }
 
@@ -568,7 +580,15 @@ document.addEventListener('DOMContentLoaded', () => {
               })
             });
             
-            const startData = await startResponse.json();
+            let startData;
+            const startContentType = startResponse.headers.get('content-type');
+            if (startContentType && startContentType.includes('application/json')) {
+              startData = await startResponse.json();
+            } else {
+              const startText = await startResponse.text();
+              throw new Error(startText || `HTTP error ${startResponse.status}`);
+            }
+
             if (startData.error || !startData.downloadId) {
               throw new Error(startData.error || translations[currentLang].btnDownloadFailed);
             }
@@ -579,7 +599,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const pollInterval = setInterval(async () => {
               try {
                 const progressResponse = await fetch(`/api/download-progress?id=${downloadId}`);
-                const progressData = await progressResponse.json();
+                let progressData;
+                const progressContentType = progressResponse.headers.get('content-type');
+                if (progressContentType && progressContentType.includes('application/json')) {
+                  progressData = await progressResponse.json();
+                } else {
+                  const progressText = await progressResponse.text();
+                  throw new Error(progressText || `HTTP error ${progressResponse.status}`);
+                }
                 
                 if (progressData.status === 'downloading') {
                   txtSpan.innerHTML = `${translations[currentLang].btnDownloadingAction} %${Math.round(progressData.progress)} <i class="fa-solid fa-circle-notch fa-spin"></i>`;
